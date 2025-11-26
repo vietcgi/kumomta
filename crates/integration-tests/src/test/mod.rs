@@ -1,7 +1,6 @@
 #![cfg(test)]
 mod arc;
 mod auth_deliver;
-mod proxy_basic;
 mod auth_deliver_invalid_password;
 mod disconnect_in_data;
 mod disconnect_in_mail_from;
@@ -23,6 +22,7 @@ mod maildir_batch_split_hook;
 mod max_line_length;
 mod no_ports_in_rcpt_domain;
 mod perm_fail;
+mod proxy_basic;
 mod proxy_protocol;
 mod queue_ndr;
 mod rebind;

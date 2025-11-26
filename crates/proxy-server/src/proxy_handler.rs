@@ -13,6 +13,7 @@ use tokio::time::timeout;
 pub async fn handle_proxy_client<S>(
     mut stream: S,
     peer_address: SocketAddr,
+    local_address: SocketAddr,
     timeout_duration: std::time::Duration,
     #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] no_splice: bool,
     require_auth: bool,
@@ -33,8 +34,7 @@ where
         // RFC 1929 username/password authentication required
         if !handshake
             .methods
-            .iter()
-            .any(|m| *m == SocksV5AuthMethod::UsernamePassword)
+            .contains(&SocksV5AuthMethod::UsernamePassword)
         {
             // Tell client we require password auth, but they didn't offer it
             timeout(timeout_duration, async {
@@ -70,18 +70,22 @@ where
         .with_context(|| format!("failed to read password auth from {peer_address:?}"))?;
 
         // Validate via Lua callback
-        let authenticated =
-            match crate::mod_proxy::authenticate_user(username.clone(), password, peer_address)
-                .await
-            {
-                Ok(result) => result,
-                Err(err) => {
-                    tracing::error!(
+        let authenticated = match crate::mod_proxy::authenticate_user(
+            username.clone(),
+            password,
+            peer_address,
+            local_address,
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::error!(
                     "authentication callback error for {username} from {peer_address:?}: {err:#}"
                 );
-                    false
-                }
-            };
+                false
+            }
+        };
 
         if !authenticated {
             tracing::warn!("authentication failed for user {username} from {peer_address:?}");
@@ -105,11 +109,7 @@ where
         .with_context(|| format!("failed to send auth success response to {peer_address:?}"))?;
     } else {
         // No auth required - accept NOAUTH
-        if !handshake
-            .methods
-            .iter()
-            .any(|m| *m == SocksV5AuthMethod::Noauth)
-        {
+        if !handshake.methods.contains(&SocksV5AuthMethod::Noauth) {
             return Err(anyhow::anyhow!(
                 "client {peer_address:?} requested authentication methods not supported by this proxy"
             ));
