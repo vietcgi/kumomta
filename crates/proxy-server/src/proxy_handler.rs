@@ -58,12 +58,8 @@ where
             socksv5::v5::write_auth_method(&mut stream, SocksV5AuthMethod::UsernamePassword).await
         })
         .await
-        .with_context(|| {
-            format!("timeout sending UsernamePassword response to {peer_address:?}")
-        })?
-        .with_context(|| {
-            format!("failed to send UsernamePassword response to {peer_address:?}")
-        })?;
+        .with_context(|| format!("timeout sending UsernamePassword response to {peer_address:?}"))?
+        .with_context(|| format!("failed to send UsernamePassword response to {peer_address:?}"))?;
 
         // Read RFC 1929 username/password from client
         let (username, password) = timeout(timeout_duration, async {
@@ -74,21 +70,18 @@ where
         .with_context(|| format!("failed to read password auth from {peer_address:?}"))?;
 
         // Validate via Lua callback
-        let authenticated = match crate::mod_proxy::authenticate_user(
-            username.clone(),
-            password,
-            peer_address,
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(err) => {
-                tracing::error!(
+        let authenticated =
+            match crate::mod_proxy::authenticate_user(username.clone(), password, peer_address)
+                .await
+            {
+                Ok(result) => result,
+                Err(err) => {
+                    tracing::error!(
                     "authentication callback error for {username} from {peer_address:?}: {err:#}"
                 );
-                false
-            }
-        };
+                    false
+                }
+            };
 
         if !authenticated {
             tracing::warn!("authentication failed for user {username} from {peer_address:?}");
@@ -96,12 +89,8 @@ where
                 write_rfc1929_status(&mut stream, false).await
             })
             .await
-            .with_context(|| {
-                format!("timeout sending auth failure response to {peer_address:?}")
-            })?
-            .with_context(|| {
-                format!("failed to send auth failure response to {peer_address:?}")
-            })?;
+            .with_context(|| format!("timeout sending auth failure response to {peer_address:?}"))?
+            .with_context(|| format!("failed to send auth failure response to {peer_address:?}"))?;
             return Err(anyhow::anyhow!(
                 "authentication failed for user {username} from {peer_address:?}"
             ));
@@ -112,12 +101,8 @@ where
             write_rfc1929_status(&mut stream, true).await
         })
         .await
-        .with_context(|| {
-            format!("timeout sending auth success response to {peer_address:?}")
-        })?
-        .with_context(|| {
-            format!("failed to send auth success response to {peer_address:?}")
-        })?;
+        .with_context(|| format!("timeout sending auth success response to {peer_address:?}"))?
+        .with_context(|| format!("failed to send auth success response to {peer_address:?}"))?;
     } else {
         // No auth required - accept NOAUTH
         if !handshake
@@ -368,11 +353,17 @@ where
     stream.read_exact(&mut password).await?;
 
     let username = String::from_utf8(username).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "username is not valid UTF-8")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "username is not valid UTF-8",
+        )
     })?;
 
     let password = String::from_utf8(password).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "password is not valid UTF-8")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "password is not valid UTF-8",
+        )
     })?;
 
     Ok((username, password))

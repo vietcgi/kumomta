@@ -1,6 +1,7 @@
 #![cfg(test)]
 mod arc;
 mod auth_deliver;
+mod proxy_basic;
 mod auth_deliver_invalid_password;
 mod disconnect_in_data;
 mod disconnect_in_mail_from;
