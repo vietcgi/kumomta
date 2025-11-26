@@ -1,4 +1,4 @@
-use config::{any_err, from_lua_value, get_or_create_module};
+use config::{any_err, from_lua_value, get_or_create_module, CallbackSignature};
 use data_loader::KeySource;
 use kumo_server_runtime::spawn;
 use mlua::{Lua, Value};
@@ -43,6 +43,10 @@ pub struct ProxyListenerParams {
     /// TLS private key file path
     #[serde(default)]
     pub tls_private_key: Option<KeySource>,
+
+    /// Require RFC 1929 username/password authentication
+    #[serde(default)]
+    pub require_auth: bool,
 }
 
 impl ProxyListenerParams {
@@ -143,9 +147,30 @@ impl ProxyListenerParams {
             peer_address,
             params.timeout,
             params.no_splice,
+            params.require_auth,
         )
         .await
     }
+}
+
+/// Validates credentials via the proxy_server_auth_1929 Lua callback.
+/// The callback receives (username, password, peer_address) and should return true if authenticated.
+pub async fn authenticate_user(
+    username: String,
+    password: String,
+    peer_address: SocketAddr,
+) -> anyhow::Result<bool> {
+    let mut config = config::load_config().await?;
+
+    // Use tuple (username, password, peer_address) for the callback signature
+    let sig = CallbackSignature::<(String, String, String), bool>::new("proxy_server_auth_1929");
+
+    let result = config
+        .async_call_callback(&sig, (username, password, peer_address.to_string()))
+        .await?;
+    config.put();
+
+    Ok(result)
 }
 
 pub fn register(lua: &Lua) -> anyhow::Result<()> {
