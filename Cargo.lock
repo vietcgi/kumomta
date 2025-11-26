@@ -5829,13 +5829,25 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "env_logger",
+ "config",
+ "data-loader",
+ "duration-serde",
+ "gethostname 1.0.2",
+ "kumo-server-common",
+ "kumo-server-lifecycle",
+ "kumo-server-memory",
+ "kumo-server-runtime",
  "libc",
- "log",
+ "mlua",
  "nix 0.30.1",
+ "rustls",
+ "serde",
  "socksv5",
  "tokio",
+ "tokio-rustls",
  "tokio-splice",
+ "tracing",
+ "version-info",
 ]
 
 [[package]]

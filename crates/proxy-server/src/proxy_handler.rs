@@ -3,18 +3,22 @@ use socksv5::v5::{
     SocksV5AuthMethod, SocksV5Command, SocksV5Host, SocksV5Request, SocksV5RequestStatus,
 };
 use std::net::{IpAddr, SocketAddr};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpSocket, TcpStream};
 use tokio::time::timeout;
 
 /// Given a newly accepted client, perform a SOCKS5 handshake and then
 /// run the proxy logic, passing data from the client through to the
 /// host to which we have connected on the behalf of the client.
-pub async fn handle_proxy_client(
-    mut stream: TcpStream,
+pub async fn handle_proxy_client<S>(
+    mut stream: S,
     peer_address: SocketAddr,
     timeout_duration: std::time::Duration,
     #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] no_splice: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     let mut state = ClientState::None;
 
     let handshake = timeout(timeout_duration, async {
@@ -49,7 +53,7 @@ pub async fn handle_proxy_client(
         .with_context(|| format!("timeout reading request from {peer_address:?} {state:?}"))?
         .with_context(|| format!("failed reading request from {peer_address:?} {state:?}"))?;
 
-        log::trace!("peer={peer_address:?} request: {request:?}");
+        tracing::trace!("peer={peer_address:?} request: {request:?}");
 
         let status = match timeout(timeout_duration, async {
             handle_request(&request, &mut state).await
@@ -59,7 +63,7 @@ pub async fn handle_proxy_client(
             Err(_) => RequestStatus::timeout(),
             Ok(Ok(s)) => s,
             Ok(Err(err)) => {
-                log::error!("peer={peer_address:?}: {state:?} {request:?} -> {err:#}");
+                tracing::error!("peer={peer_address:?}: {state:?} {request:?} -> {err:#}");
                 RequestStatus::error(err)
             }
         };
@@ -69,7 +73,7 @@ pub async fn handle_proxy_client(
         let status_debug = format!("{status:?}");
 
         let is_success = status.status == SocksV5RequestStatus::Success;
-        log::trace!("peer={peer_address:?}: {state:?} status -> {status:?}");
+        tracing::trace!("peer={peer_address:?}: {state:?} status -> {status:?}");
 
         timeout(timeout_duration, async {
             socksv5::v5::write_request_status(&mut stream, status.status, status.host, status.port)
@@ -94,14 +98,10 @@ pub async fn handle_proxy_client(
 
     match state {
         ClientState::Connected(mut remote_stream) => {
-            #[cfg(target_os = "linux")]
-            if !no_splice {
-                log::trace!("peer={peer_address:?} -> going to splice passthru mode");
-                tokio_splice::zero_copy_bidirectional(&mut stream, &mut remote_stream).await?;
-                return Ok(());
-            }
-
-            log::trace!("peer={peer_address:?} -> going to non-splice passthru mode");
+            // Note: splice(2) only works with raw TcpStream file descriptors,
+            // not with generic streams (like TLS). When using TLS or other
+            // wrapped streams, we always use copy_bidirectional.
+            tracing::trace!("peer={peer_address:?} -> going to passthru mode");
             tokio::io::copy_bidirectional(&mut stream, &mut remote_stream).await?;
             Ok(())
         }
